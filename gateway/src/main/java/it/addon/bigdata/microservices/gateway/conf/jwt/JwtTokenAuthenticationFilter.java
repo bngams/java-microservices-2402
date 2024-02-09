@@ -29,24 +29,52 @@ public class JwtTokenAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
-        // GET TOKEN
-        // DECODE TOKEN
-        String username = "admin";
-        List<String> authorities = new ArrayList();
-        // authorities.add("ROLE_ADMIN");
-        // authorities.add("ADMIN");
+        // 1. get the authentication header
+        // Tokens are supposed to be passed in the authentication header
+        String header = request.getHeader(jwtConfig.getHeader());
 
-        // DO SPRING SECU AUTH
+        // 2. validate the header and check if token present
+        // To check token presence, check if prefix is present
+        if(header == null || !header.startsWith(jwtConfig.getPrefix())) {
+            // If not valid, go to the next filter theen return;
+            chain.doFilter(request, response);
+            return;
+        }
 
-        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                username, null, authorities.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList()));
+        // if we stop up there, user has no token (it can only access public parts)
+        // if we reach the next, then a token is present and we need to check it
 
-        // Authenticate the user
-        // Now, user is authenticated
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        // 3. Get the token
+        String token = header.replace(jwtConfig.getPrefix(), "");
 
-        // DO REQUEST
+        // 4. Validate the token
+        Claims claims = Jwts.parser()
+                .setSigningKey(jwtConfig.getSecret())
+                .parseClaimsJws(token)
+                .getBody();
+
+        // get username from token
+        String username = claims.getSubject();
+        if(username != null) {
+            // get authorities from token
+            List<String> authorities = (List<String>) claims.get("authorities");
+
+            // 5. Create auth object
+            // UsernamePasswordAuthenticationToken:
+            // A built-in object, used by spring to represent the current authenticated / being authenticated user.
+            // It needs a list of authorities, which has type of GrantedAuthority interface, where SimpleGrantedAuthority is an implementation of that interface
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    username, null, authorities.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList()));
+
+            // UserDetails
+
+            // 6. Authenticate the user
+            // Now, user is authenticated
+            SecurityContextHolder.getContext().setAuthentication(auth);
+        }
+
         // go to the next filter in the filter chain
         chain.doFilter(request, response);
+
     }
 }
